@@ -73,7 +73,7 @@ public class MQTTSubscriptionManager {
    synchronized void start() throws Exception {
       for (MqttTopicSubscription subscription : session.getSessionState().getSubscriptions()) {
          String coreAddress = MQTTUtil.convertMQTTAddressFilterToCore(subscription.topicName(), session.getWildcardConfiguration());
-         Queue q = createQueueForSubscription(coreAddress, subscription.qualityOfService().value());
+         Queue q = createQueueForSubscription(coreAddress, session.isClean());
          createConsumerForSubscriptionQueue(q, subscription.topicName(), subscription.qualityOfService().value());
       }
    }
@@ -90,7 +90,7 @@ public class MQTTSubscriptionManager {
    /**
     * Creates a Queue if it doesn't already exist, based on a topic and address.  Returning the queue name.
     */
-   private Queue createQueueForSubscription(String address, int qos) throws Exception {
+   private Queue createQueueForSubscription(String address, boolean cleanSession) throws Exception {
       // Check to see if a subscription queue already exists.
       SimpleString queue = getQueueNameForTopic(address);
       Queue q = session.getServer().locateQueue(queue);
@@ -114,15 +114,15 @@ public class MQTTSubscriptionManager {
             addressInfo = session.getServerSession().createAddress(SimpleString.toSimpleString(address),
                                                                    RoutingType.MULTICAST, true);
          }
-         return findOrCreateQueue(bindingQueryResult, addressInfo, queue, qos);
+         return findOrCreateQueue(bindingQueryResult, addressInfo, queue, cleanSession);
       }
       return q;
    }
 
-   private Queue findOrCreateQueue(BindingQueryResult bindingQueryResult, AddressInfo addressInfo, SimpleString queue, int qos) throws Exception {
+   private Queue findOrCreateQueue(BindingQueryResult bindingQueryResult, AddressInfo addressInfo, SimpleString queue, boolean cleanSession) throws Exception {
 
       if (addressInfo.getRoutingTypes().contains(RoutingType.MULTICAST)) {
-         return session.getServerSession().createQueue(new QueueConfiguration(queue).setAddress(addressInfo.getName()).setFilterString(managementFilter).setDurable(MQTTUtil.DURABLE_MESSAGES && qos >= 0));
+         return session.getServerSession().createQueue(new QueueConfiguration(queue).setAddress(addressInfo.getName()).setFilterString(managementFilter).setDurable(MQTTUtil.DURABLE_MESSAGES && !cleanSession));
       }
 
       if (addressInfo.getRoutingTypes().contains(RoutingType.ANYCAST)) {
@@ -138,7 +138,7 @@ public class MQTTSubscriptionManager {
             return session.getServer().locateQueue(name);
          } else {
             try {
-               return session.getServerSession().createQueue(new QueueConfiguration(addressInfo.getName()).setRoutingType(RoutingType.ANYCAST).setFilterString(managementFilter).setDurable(MQTTUtil.DURABLE_MESSAGES && qos >= 0));
+               return session.getServerSession().createQueue(new QueueConfiguration(addressInfo.getName()).setRoutingType(RoutingType.ANYCAST).setFilterString(managementFilter).setDurable(MQTTUtil.DURABLE_MESSAGES && !cleanSession));
             } catch (ActiveMQQueueExistsException e) {
                return session.getServer().locateQueue(addressInfo.getName());
             }
@@ -173,7 +173,7 @@ public class MQTTSubscriptionManager {
 
       session.getSessionState().addSubscription(subscription, session.getWildcardConfiguration());
 
-      Queue q = createQueueForSubscription(coreAddress, qos);
+      Queue q = createQueueForSubscription(coreAddress, session.isClean());
 
       if (s == null) {
          createConsumerForSubscriptionQueue(q, topicName, qos);
